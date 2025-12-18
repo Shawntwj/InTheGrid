@@ -12,7 +12,7 @@ async def get_db_connection():
     password = os.getenv("DB_PASSWORD", "postgres")
     database = os.getenv("DB_NAME", "inthegrid")
 
-    print(f"🔍 Connecting to: host={host}, port={port}, user={user}, database={database}")
+    print(f"Connecting to: host={host}, port={port}, user={user}, database={database}")
 
     return await asyncpg.connect(
         host=host,
