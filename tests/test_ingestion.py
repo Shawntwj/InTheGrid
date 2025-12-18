@@ -21,7 +21,7 @@ async def test_write_prices_to_db():
             assert row is not None, f"No record found for {market}"
             assert float(row["price"]) == expected_price, f"Price mismatch for {market}"
 
-        print(f"✓ Successfully wrote {len(prices)} prices to database")
+        print(f"Successfully wrote {len(prices)} prices to database")
     finally:
         await conn.execute("DELETE FROM prices WHERE market LIKE 'TEST_%'")
         await conn.close()
@@ -44,7 +44,7 @@ async def test_publish_to_redis():
         assert "DE" in data, "Missing DE price in Redis message"
         assert "FR" in data, "Missing FR price in Redis message"
 
-        print(f"✓ Successfully published to Redis Stream: {data}")
+        print(f"Successfully published to Redis Stream: {data}")
     finally:
         await redis_conn.aclose()
 
