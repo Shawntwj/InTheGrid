@@ -48,18 +48,18 @@ def test_mean_reversion():
 
 if __name__ == "__main__":
     test_generates_correct_hours()
-    print("✓ Generates correct hours")
+    print("Generates correct hours")
 
     test_all_markets_present()
-    print("✓ All markets present")
+    print("All markets present")
 
     test_de_nl_correlation()
-    print("✓ DE-NL correlation works")
+    print("DE-NL correlation works")
 
     test_peak_higher_than_offpeak()
-    print("✓ Peak hours higher than off-peak")
+    print("Peak hours higher than off-peak")
 
     test_mean_reversion()
-    print("✓ Mean reversion keeps prices realistic")
+    print("Mean reversion keeps prices realistic")
 
-    print("\nAll tests passed!")
+    print("\nAll tests passed")
