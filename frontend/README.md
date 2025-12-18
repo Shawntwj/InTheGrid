@@ -1,25 +1,27 @@
 # InTheGrid Dashboard
 
-Professional real-time energy arbitrage monitoring interface.
+Professional real-time energy arbitrage monitoring interface built with Streamlit.
+
+## Overview
+
+This dashboard provides a live view of electricity price arbitrage opportunities across 5 European power markets:
+- Germany (DE)
+- France (FR)
+- Netherlands (NL)
+- Denmark (DK)
+- Belgium (BE)
 
 ## Quick Start
 
-### 1. Install Dependencies
-```bash
-pip install -r ../requirements.txt
-```
+### Option 1: Using Docker (Recommended)
 
-### 2. Start the Backend API
-In one terminal:
+Start all services including the backend API:
 ```bash
 # From project root
-python -m src.api
+docker-compose up
 ```
 
-The API will run on http://localhost:8000
-
-### 3. Start the Dashboard
-In another terminal:
+Then run the Streamlit dashboard:
 ```bash
 # From project root
 streamlit run frontend/app.py
@@ -27,22 +29,127 @@ streamlit run frontend/app.py
 
 The dashboard will open automatically at http://localhost:8501
 
+### Option 2: Manual Setup
+
+**1. Install Dependencies**
+```bash
+# From project root
+pip install -r requirements.txt
+```
+
+**2. Start Infrastructure**
+```bash
+docker-compose up postgres redis
+```
+
+**3. Start Backend Services**
+
+In separate terminals:
+```bash
+# Terminal 1: API
+python -m src.api
+
+# Terminal 2: Data Ingestion
+python -m src.ingestion
+
+# Terminal 3: Calculator
+python -m src.calculator
+```
+
+**4. Start Dashboard**
+```bash
+# Terminal 4: Dashboard
+streamlit run frontend/app.py
+```
+
 ## Features
 
-- **Live Price Ticker**: Real-time prices across 5 European markets (DE, FR, NL, DK, BE)
-- **Arbitrage Opportunities**: Top 10 profitable trades ranked by net profit
-- **Price History**: Interactive chart with market statistics
-- **Auto-Refresh**: Dashboard updates every 5 seconds
+### Live Price Ticker
+- Real-time spot prices across all 5 European markets
+- Updates every 5 seconds
+- Prices displayed in €/MWh
+
+### Arbitrage Opportunities Table
+- Top 10 profitable trading opportunities
+- Shows buy/sell market pairs
+- Net profit after transmission costs
+- Sorted by profitability
+
+### Interactive Price History Chart
+- Historical price movements for any selected market
+- Statistical analysis (min, max, average, latest)
+- Built with Plotly for interactive exploration
+- Customizable market selection
+
+### Auto-Refresh
+- Dashboard automatically refreshes every 5 seconds
+- Real-time updates without manual intervention
 
 ## Dashboard Layout
 
-1. **Market Prices**: Current spot prices for all markets
-2. **Opportunities Table**: Actionable arbitrage trades with buy/sell recommendations
-3. **Price Chart**: Historical price movements with average, min, max stats
-4. **Alert System**: Highlights best opportunity in real-time
+The interface is organized into four main sections:
 
-## Notes
+1. **Header**: Quick explanation of how the dashboard works (expandable)
+2. **Live Market Prices**: Current spot prices for all markets with last update timestamp
+3. **Top Arbitrage Opportunities**: Ranked list of profitable trades showing where to buy low and sell high
+4. **Price History**: Interactive chart with market selector and key statistics
 
-- Ensure PostgreSQL is running with price data
-- Run the calculator service to generate opportunities: `python -m src.calculator`
-- Dashboard auto-refreshes every 5 seconds
+## Configuration
+
+The dashboard connects to the FastAPI backend at `http://localhost:8000` by default.
+
+To modify the API endpoint, edit [app.py:9](app.py#L9):
+```python
+API_BASE_URL = "http://localhost:8000"
+```
+
+Market names can be customized at [app.py:10-16](app.py#L10-L16):
+```python
+MARKET_NAMES = {
+    "DE": "Germany",
+    "FR": "France",
+    # ...
+}
+```
+
+## API Endpoints Used
+
+The dashboard consumes the following API endpoints:
+
+- `GET /api/prices/latest` - Latest prices for all markets
+- `GET /api/spreads/opportunities` - Current arbitrage opportunities
+- `GET /api/prices/history/{market}?limit={n}` - Historical prices for a specific market
+
+## Dependencies
+
+Key frontend dependencies:
+- **Streamlit** (1.41.1) - Web application framework
+- **Plotly** (5.24.1) - Interactive charting
+- **Pandas** (2.2.3) - Data manipulation
+- **Requests** (2.32.3) - HTTP client for API calls
+
+See [requirements.txt](../requirements.txt) for complete dependency list.
+
+## Troubleshooting
+
+**Dashboard shows "Error fetching prices"**
+- Ensure the API is running on http://localhost:8000
+- Check that PostgreSQL has price data
+- Verify the ingestion service is running
+
+**No opportunities shown**
+- Ensure the calculator service is running
+- Wait a few seconds for spreads to be calculated
+- Check that multiple markets have price data
+
+**Dashboard doesn't auto-refresh**
+- This is normal Streamlit behavior
+- The app reruns every 5 seconds automatically
+
+## Development
+
+The dashboard is a single-file Streamlit application ([app.py](app.py)) with:
+- Custom CSS styling for professional appearance
+- Error handling for API failures
+- Responsive layout using Streamlit columns
+- Clean, minimalist design focused on data clarity
