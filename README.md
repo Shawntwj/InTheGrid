@@ -25,6 +25,8 @@ Transmission:    -€2.50/MWh
 ────────────────────────────
 Net Profit:      €17.50/MWh
 ```
+### Live Dashboard
+![Dashboard Overview](docs/images/dashboard.png)
 
 ## Quick Start
 
