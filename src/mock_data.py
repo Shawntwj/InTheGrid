@@ -1,3 +1,39 @@
+"""
+Mock electricity price generator for testing trading strategies.
+
+Generates realistic price data with:
+- Time-of-day variation (peak hours cost more)
+- Random walk with mean reversion (prices drift but stay realistic)
+- Market correlation (DE-NL move together due to grid interconnections)
+
+Usage:
+    from src.mock_data import generate_prices
+
+    data = generate_prices(24)  # 24 hours of data
+
+    for entry in data:
+        timestamp = entry["timestamp"]
+        de_price = entry["prices"]["DE"]
+        print(f"{timestamp}: Germany at €{de_price}/MWh")
+
+Returns:
+    List of dicts with structure:
+    [
+        {
+            "timestamp": datetime(2025, 1, 1, 0, 0),
+            "prices": {"DE": 75.2, "FR": 85.1, "NL": 73.8, "BE": 80.5, "AT": 78.3}
+        },
+        ...
+    ]
+
+Rationale:
+    Real electricity markets are too complex to model accurately in an hour.
+    This generator captures the essential behaviors needed to test arbitrage:
+    - Price spreads between markets
+    - Time-based patterns (peak/off-peak)
+    - Correlation (can't just buy everywhere cheap and sell everywhere expensive)
+"""
+
 import random
 from datetime import datetime, timedelta
 from typing import Dict, List
