@@ -48,6 +48,46 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  ingestion:
+    build: .
+    container_name: inthegrid-ingestion
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: inthegrid
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: ["python", "-m", "src.ingestion"]
+    restart: unless-stopped
+
+  calculator:
+    build: .
+    container_name: inthegrid-calculator
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: inthegrid
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      ingestion:
+        condition: service_started
+    command: ["python", "-m", "src.calculator"]
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
