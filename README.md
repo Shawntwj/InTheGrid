@@ -2,15 +2,13 @@
 
 **Real-Time European Electricity Arbitrage Detection Platform**
 
-A production-ready proof-of-concept that identifies profitable arbitrage opportunities across European power markets using streaming data pipelines and time-series analytics.
-
-[![CI/CD](https://github.com/yourusername/InTheGrid/actions/workflows/test.yml/badge.svg)](https://github.com/yourusername/InTheGrid/actions)
-[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+A proof-of-concept that identifies profitable arbitrage opportunities across European power markets using streaming data pipelines and time-series analytics.
 
 ## Overview
 
-InTheGrid monitors electricity prices across 5 European markets (Germany, France, Netherlands, Belgium, Austria) and automatically detects arbitrage opportunities where you can buy electricity in one market and sell it in another for profit, accounting for transmission costs.
+InTheGrid is a dashboard that aims to monitors electricity prices across 5 European markets (Germany, France, Netherlands, Belgium, Austria) and automatically detects arbitrage opportunities where you can buy electricity in one market and sell it in another for profit, accounting for transmission costs.
+
+> **Note:** This POC currently uses **simulated market data** with realistic pricing characteristics (time-of-day variation, market correlation, mean reversion). The architecture is designed to seamlessly integrate real data from the ENTSO-E Transparency Platform API in the future.
 
 **Key Features:**
 - Real-time ingestion of market prices every 10 seconds
@@ -43,6 +41,9 @@ cp .env.example .env
 
 # Start all services
 docker compose up -d
+
+# Start frontend 
+streamlit run frontend/app.py  
 
 # Access services
 # Dashboard: http://localhost:8501
@@ -102,8 +103,14 @@ Calculator polls database every 10 seconds rather than event-driven architecture
 ### 4. Single Dockerfile
 One Dockerfile builds image used by all Python services, ensuring dependency consistency and faster builds.
 
-### 5. Mock Data Generator
-Simulates realistic market behavior (time-of-day variation, mean reversion, market correlation) to enable immediate development without waiting for API approval.
+### 5. Mock Data Generator (Current Implementation)
+**Currently using simulated data** to demonstrate the platform's capabilities. The mock generator simulates realistic market behavior including:
+- **Time-of-day variation:** Peak hours (8am-8pm) have 1.3x pricing, off-peak 0.8x
+- **Mean reversion:** Prices drift back to market base values
+- **Market correlation:** Germany-Netherlands prices move together (interconnected grids)
+- **Realistic volatility:** ±€2 random walk mimicking actual market behavior
+
+This approach enabled immediate development without needing for immeditate ENTSO-E API integration which may introduce more complexity. The architecture supports drop-in replacement with real data sources via a simple module swap.
 
 ## Project Structure
 
@@ -216,146 +223,17 @@ pytest tests/test_calculator.py -v
 - Integration tests: Dual-write validation, spread calculation
 - API tests: Health check, endpoints, error handling
 
-## AWS Deployment
-
-```bash
-cd aws-deployment
-./deploy.sh
-```
-
-The deployment script automates:
-1. AWS CLI validation
-2. AMI detection (Ubuntu 24.04)
-3. SSH key pair creation
-4. Security group configuration
-5. EC2 instance launch (t3.micro)
-6. Docker installation
-7. Application deployment
-
-**Teardown:**
-```bash
-cd aws-deployment
-./teardown.sh
-```
-
-## Database Schema
-
-### prices Table (TimescaleDB Hypertable)
-```sql
-CREATE TABLE prices (
-    id SERIAL,
-    market VARCHAR(10) NOT NULL,
-    timestamp TIMESTAMPTZ NOT NULL,
-    price NUMERIC(10, 2) NOT NULL,
-    PRIMARY KEY (market, timestamp)
-);
-SELECT create_hypertable('prices', 'timestamp');
-```
-
-### spreads Table
-```sql
-CREATE TABLE spreads (
-    id SERIAL PRIMARY KEY,
-    market_pair VARCHAR(20) NOT NULL,
-    timestamp TIMESTAMPTZ NOT NULL,
-    spread NUMERIC(10, 2) NOT NULL,
-    net_opportunity NUMERIC(10, 2) NOT NULL,
-    low_market VARCHAR(10) NOT NULL,
-    high_market VARCHAR(10) NOT NULL,
-    low_price NUMERIC(10, 2) NOT NULL,
-    high_price NUMERIC(10, 2) NOT NULL
-);
-```
-
-## Environment Variables
-
-```bash
-# Database
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=postgres
-DB_NAME=inthegrid
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-# API
-API_PORT=8000
-```
-
-## Troubleshooting
-
-### Services won't start
-```bash
-docker compose ps
-docker compose logs <service>
-docker compose restart
-```
-
-### Database connection errors
-```bash
-docker compose exec postgres pg_isready
-docker compose down -v  # WARNING: Deletes all data
-docker compose up -d
-```
-
-### No opportunities detected
-```bash
-# Check ingestion
-docker compose exec postgres psql -U postgres -d inthegrid -c "SELECT COUNT(*) FROM prices;"
-
-# Verify calculator
-docker compose logs calculator | grep "Calculated"
-```
-
-### Dashboard not updating
-```bash
-curl http://localhost:8000/health
-docker compose logs frontend
-```
-
-## Future Enhancements
-
-**Phase 2:** ENTSO-E API integration, data validation, retry logic
-
-**Phase 3:** Event-driven calculator, WebSocket endpoints, alert engine
-
-**Phase 4:** Authentication, rate limiting, Prometheus metrics, Kubernetes deployment
-
-**Phase 5:** Market correlation analysis, ML price prediction, pattern analysis
-
 ## Development Timeline
 
 Built incrementally over approximately 3 days:
 
-| Phase | Description | Time |
-|-------|-------------|------|
-| P1 | Database setup | 1h |
-| P2 | Mock data generator | 2h |
-| P3 | Ingestion service | 1.5h |
-| P4 | Spread calculator | 1.5h |
-| P5 | FastAPI backend | 2h |
-| P6 | Streamlit dashboard | 2h |
-| P7 | Docker integration | 1h |
-| P8 | Documentation + CI/CD | 1h |
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Run tests (`pytest -v`)
-4. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details.
-
-## Contact
-
-**Author:** Shawn Teo
-**Project:** InTheGrid - Energy Arbitrage Detection
-**Status:** Production-ready POC
-
-For questions or feedback, please open an issue on GitHub.
+| Phase | Description |
+|-------|-------------|
+| P1 | Database setup
+| P2 | Mock data generator 
+| P3 | Ingestion service 
+| P4 | Spread calculator
+| P5 | FastAPI backend 
+| P6 | Streamlit dashboard 
+| P7 | Docker integration 
+| P8 | Documentation + CI/CD 
