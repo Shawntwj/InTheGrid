@@ -1,5 +1,7 @@
 import asyncio
 import asyncpg
+import redis.asyncio as redis
+import os
 from datetime import datetime
 from decimal import Decimal
 from itertools import combinations
@@ -121,66 +123,95 @@ async def write_spreads_to_db(conn: asyncpg.Connection, spreads: list[Spread]):
             spread.high_price
         )
 
-async def calculate_and_store_spreads():
+async def calculate_and_store_spreads_from_redis(db_conn: asyncpg.Connection, prices_data: dict):
     """
-    Main function: Read latest prices, calculate spreads, and store opportunities.
-    This would typically be called on a schedule (e.g., every time new prices arrive).
+    Calculate spreads from Redis Stream data and store to DB.
+    
+    Args:
+        db_conn: Database connection (reused from main loop)
+        prices_data: Price data from Redis Stream message
     """
-    conn = await get_db_connection()
+    # Parse Redis data into the format calculate_spreads() expects
+    # Redis gives you: {'timestamp': '2024-01-04...', 'DE': '45.2', 'FR': '50.1', ...}
+    # You need: {'DE': (Decimal('45.2'), datetime), 'FR': (Decimal('50.1'), datetime), ...}
+    
+    timestamp = datetime.fromisoformat(prices_data['timestamp'])
+    prices = {
+        market: (Decimal(price), timestamp)
+        for market, price in prices_data.items()
+        if market != 'timestamp'  # Skip the timestamp key
+    }
+    
+    if not prices:
+        print("No prices in Redis message")
+        return
+    
+    print(f"Received prices for {len(prices)} markets from Redis Stream")
+    
+    # Calculate spreads (reuse existing logic)
+    opportunities = calculate_spreads(prices)
+    print(f"Found {len(opportunities)} arbitrage opportunities")
+    
+    # Write to database
+    if opportunities:
+        await write_spreads_to_db(db_conn, opportunities)
+        print(f"Stored {len(opportunities)} opportunities to database")
+        
+        for opp in opportunities:
+            print(f"  {opp.market_pair}: spread={opp.spread:.2f}, "
+                  f"net={opp.net_opportunity:.2f}")
+    else:
+        print("No profitable opportunities found")
 
-    try:
-        # Step 1: Get latest prices
-        prices = await get_latest_prices(conn)
+async def get_redis_connection():
+    """Create and return a Redis connection"""
+    host = os.getenv("REDIS_HOST", "localhost")
+    port = int(os.getenv("REDIS_PORT", "6379"))
 
-        if not prices:
-            print("No prices available in database")
-            return
-
-        print(f"Fetched latest prices for {len(prices)} markets")
-
-        # Step 2: Calculate spreads
-        opportunities = calculate_spreads(prices)
-
-        print(f"Found {len(opportunities)} arbitrage opportunities")
-
-        # Step 3: Write to database
-        if opportunities:
-            await write_spreads_to_db(conn, opportunities)
-            print(f"Stored {len(opportunities)} opportunities to database")
-
-            # Print summary
-            for opp in opportunities:
-                print(f"  {opp.market_pair}: spread={opp.spread:.2f}, "
-                      f"net={opp.net_opportunity:.2f} "
-                      f"(buy {opp.low_market}@€{opp.low_price:.2f}, "
-                      f"sell {opp.high_market}@€{opp.high_price:.2f})")
-        else:
-            print("No profitable opportunities found")
-
-    finally:
-        await conn.close()
+    return await redis.Redis(host=host, port=port, decode_responses=True)        
 
 async def calculator_loop():
     """
-    Continuous loop that calculates spreads every 10 seconds.
-    In production, this might listen to Redis streams instead.
+    Continuous loop that calculates spreads when added to the stream
     """
     print("Starting spread calculator service...")
-    print("Calculating spreads every 10 seconds")
+    print("Calculating spreads using streams")
+
+    redis_conn = await get_redis_connection()
+    db_conn = await get_db_connection()
+
+    try:
+        await redis_conn.xgroup_create('prices', 'calculator_group', id='0', mkstream=True)
+        print("Created consumer group 'calculator_group'")
+    except Exception as e:
+        print(f"Consumer group already exists (OK): {e}")
 
     iteration = 0
 
     try:
         while True:
-            iteration += 1
-            print(f"\n[Iteration {iteration}] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            messages = await redis_conn.xreadgroup(
+                groupname='calculator_group',
+                consumername='calculator-1',
+                streams={'prices':'>'},
+                count=1, 
+                block=0
+            )
 
-            await calculate_and_store_spreads()
-
-            await asyncio.sleep(10)
+            if messages:
+                for stream_name, stream_messages in messages:
+                    for message_id, data in stream_messages:
+                        iteration +=1 
+                        print(f"\n[Iteration {iteration}] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                        await calculate_and_store_spreads_from_redis(db_conn, data)
+                        await redis_conn.xack('prices', 'calculator_group', message_id)
 
     except KeyboardInterrupt:
         print("\nStopping calculator service...")
+
+    finally:
+        await db_conn.close()
+        await redis_conn.aclose()
 
 if __name__ == "__main__":
     asyncio.run(calculator_loop())

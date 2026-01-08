@@ -5,7 +5,7 @@ from src.calculator import (
     get_latest_prices,
     calculate_spreads,
     write_spreads_to_db,
-    calculate_and_store_spreads,
+    calculate_and_store_spreads_from_redis,
     get_transmission_cost
 )
 from src.database import get_db_connection
@@ -131,37 +131,44 @@ async def test_inject_known_spread():
         await conn.execute("DELETE FROM spreads WHERE market_pair LIKE 'TEST_%'")
         await conn.close()
 
-async def test_calculator_checkpoint():
-    """Final checkpoint: verify spreads are appearing in the spreads table"""
+async def test_redis_stream_processing():
+    """Test the new Redis Streams-based processing"""
     conn = await get_db_connection()
 
     try:
-        # Run the full calculation pipeline
-        await calculate_and_store_spreads()
+        # Create mock Redis message data (simulates what comes from Redis Stream)
+        timestamp = datetime.now()
+        mock_redis_message = {
+            'timestamp': timestamp.isoformat(),
+            'DE': '60.00',
+            'FR': '80.00',
+            'NL': '65.00',
+            'BE': '70.00',
+            'AT': '68.00'
+        }
 
-        # Check spreads table
-        spread_count = await conn.fetchval("SELECT COUNT(*) FROM spreads")
-        print(f"\nSpreads table count: {spread_count}")
+        print("\nTesting Redis Stream message processing:")
+        print(f"Mock message: {mock_redis_message}")
 
-        if spread_count > 0:
-            # Show recent spreads
-            recent = await conn.fetch(
-                "SELECT * FROM spreads ORDER BY created_at DESC LIMIT 5"
-            )
+        # Process the mock message using the new function
+        await calculate_and_store_spreads_from_redis(conn, mock_redis_message)
 
-            print("\nRecent spread opportunities:")
-            for row in recent:
-                print(f"  {row['market_pair']}: "
-                      f"spread=€{row['spread']:.2f}, "
-                      f"net=€{row['net_opportunity']:.2f}")
+        # Verify spreads were written to database
+        spread_count = await conn.fetchval("SELECT COUNT(*) FROM spreads WHERE timestamp >= $1", timestamp)
+        print(f"\nSpreads created: {spread_count}")
+
+        assert spread_count > 0, "Should have created at least one spread"
 
         print("\n" + "="*60)
-        print("Phase 4 Checkpoint Instructions:")
+        print("Redis Streams Architecture Verified:")
         print("="*60)
-        print("1. Ensure ingestion is running: python -m src.ingestion")
-        print("2. Run calculator: python -m src.calculator")
-        print("3. Verify with: SELECT * FROM spreads ORDER BY created_at DESC LIMIT 10;")
-        print("4. Should see opportunities appearing as prices update")
+        print("Messages can be parsed from Redis Stream format")
+        print("Spreads are calculated from stream data")
+        print("Results are persisted to PostgreSQL")
+        print("\nTo test end-to-end:")
+        print("1. Run: docker-compose up")
+        print("2. Watch logs: docker logs -f inthegrid-calculator")
+        print("3. Verify real-time processing (no 10s delay)")
         print("="*60)
 
     finally:
@@ -177,5 +184,5 @@ if __name__ == "__main__":
     print()
     asyncio.run(test_inject_known_spread())
     print()
-    asyncio.run(test_calculator_checkpoint())
+    asyncio.run(test_redis_stream_processing())
     print("\n✓ All calculator tests passed!")

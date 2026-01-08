@@ -11,9 +11,11 @@ InTheGrid is a dashboard that aims to monitors electricity prices across 5 Europ
 > **Note:** This POC currently uses **simulated market data** with realistic pricing characteristics (time-of-day variation, market correlation, mean reversion). The architecture is designed to seamlessly integrate real data from the ENTSO-E Transparency Platform API in the future.
 
 **Key Features:**
+- **Event-driven architecture** using Redis Streams for sub-second latency
 - Real-time ingestion of market prices every 10 seconds
 - Automated spread calculation across all market pairs (10 combinations)
 - Profit detection accounting for country-specific transmission costs
+- Consumer groups for reliable message processing
 - Live dashboard with auto-refreshing visualizations
 - REST API for programmatic access
 
@@ -73,9 +75,11 @@ streamlit run frontend/app.py
 ```mermaid
 graph TD
     A[Mock Generator] --> B[Ingestion Service<br/>10s interval]
-    B --> C[PostgreSQL<br/>TimescaleDB]
-    B --> D[Redis Stream<br/>Real-time]
-    C --> E[Calculator Service<br/>10s polling]
+    B --> C[PostgreSQL<br/>Historical Storage]
+    B --> D[Redis Stream<br/>Event Bus]
+    D --> E[Calculator Service<br/>Event-Driven Consumer]
+    C --> E
+    E --> C
     E --> F[FastAPI REST API]
     F --> G[Dashboard<br/>Streamlit]
     F --> H[External Apps]
@@ -85,10 +89,13 @@ graph TD
 ```mermaid
 graph LR
     A[Price Generation<br/>10s] --> B[Ingestion<br/>async]
-    B --> C[Storage<br/>dual-write]
-    C --> D[Calculation<br/>10s poll]
-    D --> E[API<br/>REST]
-    E --> F[Visualization<br/>5s refresh]
+    B --> C[Dual-Write]
+    C --> D[PostgreSQL<br/>persistence]
+    C --> E[Redis Stream<br/>real-time]
+    E --> F[Calculator<br/>event consumer]
+    F --> G[Spreads DB]
+    G --> H[API<br/>REST]
+    H --> I[Dashboard<br/>5s refresh]
 ```
 
 ## Key Architectural Decisions
@@ -97,15 +104,22 @@ graph LR
 Uses TimescaleDB extension for time-series optimization providing 10-100x faster queries for latest price lookups and automatic time-based partitioning.
 
 ### 2. Dual-Write Pattern (PostgreSQL + Redis)
-Ingestion service writes to both PostgreSQL (persistent storage) and Redis Stream (real-time messaging) for architectural flexibility and future event-driven consumers.
+Ingestion service writes to both PostgreSQL (persistent storage) and Redis Stream (real-time messaging). PostgreSQL provides historical data for analytics and backtesting, while Redis Streams enables sub-second latency for real-time processing.
 
-### 3. Polling Calculator
-Calculator polls database every 10 seconds rather than event-driven architecture for simplicity while maintaining Redis Stream infrastructure for future migration.
+### 3. Event-Driven Calculator with Redis Streams
+Calculator uses Redis Streams consumer groups for real-time event processing. This architecture provides:
+- **Sub-second latency:** Processes spreads immediately when prices arrive (vs 10s polling delay)
+- **Reliability:** Consumer groups track processed messages with XACK acknowledgments
+- **Fault tolerance:** Pending message tracking enables recovery from crashes
+- **Scalability:** Multiple calculator instances can join the consumer group for horizontal scaling
 
-### 4. Single Dockerfile
+### 4. Redis Stream Auto-Trimming
+Redis Streams are configured with `MAXLEN` to automatically trim old messages, keeping only the most recent data in memory while PostgreSQL maintains the full historical record. This prevents unbounded memory growth while maintaining the event-driven architecture.
+
+### 5. Single Dockerfile
 One Dockerfile builds image used by all Python services, ensuring dependency consistency and faster builds.
 
-### 5. Mock Data Generator (Current Implementation)
+### 6. Mock Data Generator (Current Implementation)
 **Currently using simulated data** to demonstrate the platform's capabilities. The mock generator simulates realistic market behavior including:
 - **Time-of-day variation:** Peak hours (8am-8pm) have 1.3x pricing, off-peak 0.8x
 - **Mean reversion:** Prices drift back to market base values
@@ -225,6 +239,33 @@ pytest tests/test_calculator.py -v
 - Integration tests: Dual-write validation, spread calculation
 - API tests: Health check, endpoints, error handling
 
+## Redis Streams Implementation
+
+### Architecture
+The platform uses Redis Streams for event-driven message processing:
+
+```
+Ingestion Service
+    ↓ XADD (publish)
+Redis Stream: 'prices'
+    ↓ XREADGROUP (consume)
+Calculator Service (Consumer Group: 'calculator_group')
+    ↓ XACK (acknowledge)
+Processed & Stored to PostgreSQL
+```
+
+### Key Commands Used
+- **XADD**: Publish new price data to stream
+- **XREADGROUP**: Consume messages as consumer group member
+- **XACK**: Acknowledge processed messages
+- **XGROUP CREATE**: Initialize consumer group on startup
+
+### Benefits Over Polling
+- **Latency**: <1s vs ~10s average with polling
+- **Efficiency**: No wasted DB queries when no new data
+- **Scalability**: Add calculator instances to consumer group for load distribution
+- **Reliability**: Pending messages tracked; can resume after crashes
+
 ## Development Timeline
 
 Built incrementally over approximately 3 days:
@@ -232,10 +273,11 @@ Built incrementally over approximately 3 days:
 | Phase | Description |
 |-------|-------------|
 | P1 | Database setup
-| P2 | Mock data generator 
-| P3 | Ingestion service 
+| P2 | Mock data generator
+| P3 | Ingestion service
 | P4 | Spread calculator
-| P5 | FastAPI backend 
-| P6 | Streamlit dashboard 
-| P7 | Docker integration 
-| P8 | Documentation + CI/CD 
+| P5 | FastAPI backend
+| P6 | Streamlit dashboard
+| P7 | Docker integration
+| P8 | Documentation + CI/CD
+| P9 | Redis Streams migration (polling → event-driven) 
